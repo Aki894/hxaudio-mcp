@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+*.exe
+*.hxconfig
+*.reg
+*.bak
+*.json.bak
+.env
+.DS_Store

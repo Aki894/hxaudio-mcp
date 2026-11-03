@@ -1,0 +1,6 @@
+# Add to ~/.codex/config.toml and replace the path with your installation path.
+[mcp_servers.hxaudio]
+command = 'C:\path\to\hxaudio-mcp\.venv\Scripts\hxaudio-mcp.exe'
+args = ['serve']
+startup_timeout_sec = 20
+tool_timeout_sec = 30

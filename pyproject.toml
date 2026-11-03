@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hxaudio-mcp"
+version = "0.1.0"
+description = "Local MCP server to inspect, control, and automate HXAudio APO parametric EQ"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "HXAudio MCP contributors"}]
+keywords = ["mcp", "audio", "equalizer", "windows", "hxaudio", "peq"]
+classifiers = ["Programming Language :: Python :: 3", "Operating System :: Microsoft :: Windows", "License :: OSI Approved :: MIT License"]
+dependencies = ["mcp>=2.0,<3.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+hxaudio-mcp = "hxaudio_mcp.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hxaudio_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
