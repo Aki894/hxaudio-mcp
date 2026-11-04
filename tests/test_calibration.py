@@ -1,4 +1,5 @@
 """Exercise the P2 job lifecycle with a simulated audio chain."""
+import sys
 import time
 
 import pytest
@@ -103,6 +104,7 @@ def test_external_change_pauses_without_overwriting(tmp_path, harness):
     assert jobs.status(sid)["stop_reason"] == "external_revision_conflict"
     assert ctl.get_dsp_profile().revision == edited
 
+@pytest.mark.skipif(sys.platform != "win32", reason="MCP server requires the Windows registry")
 def test_calibration_mcp_tools_registered():
     import asyncio
 

@@ -3,10 +3,12 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="MCP server requires the Windows registry")
 def test_calibration_stdio_contract():
     async def check():
         params = StdioServerParameters(
