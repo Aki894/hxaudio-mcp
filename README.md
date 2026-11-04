@@ -144,3 +144,16 @@ For the registry integration and project structure, see [Architecture](docs/ARCH
 ## License
 
 [MIT](LICENSE). HXAudio MCP is an independent integration project and is not affiliated with the HXAudio developer. HXAudio itself is not included in this repository.
+
+## Acoustic measurements
+
+Install with `python -m pip install -e ".[calibration]"` and restart the MCP
+server. Use `calibration_check` to identify the HXAudio profile and audio
+endpoints. Use `calibration_measure` for individual captures and
+`calibration_optimize` to preview a shared EQ fitted to both channels.
+Use `calibration_compare_tones` to verify changes at selected frequencies.
+For closed-loop calibration, start `calibration_run` and poll
+`calibration_status`. A trial with `keep=false` restores the starting profile.
+
+See [Acoustic calibration](docs/CALIBRATION.md) for routing, tool arguments,
+stepped-sine verification and CLI sweep diagnostics.

@@ -166,3 +166,46 @@ def test_public_preamp_falls_back_to_global(harness):
     assert result["setting"] == "DspPreampDb"
     assert c.get_preamp()["preamp_db"] == -6
     assert r.read("machine", KEY_PATH, "DspPreampDb").value == "-6"
+
+
+def test_apply_dsp_profile_checks_target_and_conflict(harness):
+    controller, registry = harness
+    other = "other endpoint"
+    registry.write("user", KEY_PATH, "PlaybackEndpointProfiles",
+                   RegValue([PROFILE, other], REG_MULTI_SZ))
+    with pytest.raises(ValueError, match="Multiple"):
+        controller.get_dsp_profile()
+    revision = controller.get_dsp_profile(PROFILE).revision
+    registry.write("machine", RUNTIME_PATH, f"ApoSettingsGeneration_{device_suffix(other)}",
+                   RegValue(11, REG_DWORD))
+    result = controller.apply_dsp_profile([band(gain=-6)], -4, revision, PROFILE, False, 0)
+    assert result["registry_consistent"]
+    assert result["profile"]["preamp_db"] == -4
+    assert result["profile"]["virtual_bass_enabled"] is False
+    assert result["runtime_confirmation"]["state"] == "not_observed"
+    assert result["runtime_confirmation"]["timed_out"]
+    assert registry.signals == 1
+    assert controller.wait_for_generation(11, 0)["state"] == "observed"
+    registry.write("machine", RUNTIME_PATH, f"ApoSettingsGeneration_{device_suffix(PROFILE)}",
+                   RegValue(11, REG_DWORD))
+    assert controller.wait_for_generation(11, 0, PROFILE)["state"] == "observed"
+    assert controller.apply_dsp_profile([], 0, revision, PROFILE)["state"] == "revision_conflict"
+    assert registry.signals == 1
+
+
+def test_apply_dsp_profile_rolls_back(harness, monkeypatch):
+    controller, registry = harness
+    revision = controller.get_dsp_profile().revision
+    before = dict(registry.items)
+    write = registry.write
+
+    def fail_preamp(hive, key, name, value):
+        if hive == "machine" and name == "DspPreampDb":
+            raise OSError("injected failure")
+        write(hive, key, name, value)
+
+    monkeypatch.setattr(registry, "write", fail_preamp)
+    with pytest.raises(OSError, match="injected failure"):
+        controller.apply_dsp_profile([band()], -4, revision)
+    assert registry.items == before
+    assert registry.signals == 0

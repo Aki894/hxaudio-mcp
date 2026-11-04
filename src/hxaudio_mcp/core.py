@@ -1,6 +1,7 @@
 """Transactional HXAudio APO controller; independent of MCP transport."""
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -9,7 +10,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,8 @@ from .hxconfig import extract_peq_bands
 from .models import Band, MAX_PEQ_BANDS, parse_bands, validate_preamp
 from .registry import (KEY_PATH, NOTIFY_PATH, RUNTIME_PATH, REG_DWORD,
                        REG_MULTI_SZ, REG_SZ, RegValue, Registry)
+
+_DSP_WRITE_LOCK = threading.RLock()
 
 BACKUP_VERSION = 1
 PROFILE_KEYS = ("PlaybackEndpointProfiles", "TargetEndpointProfiles")
@@ -64,11 +67,23 @@ def _safe_reg_size(entry: RegValue) -> None:
             raise ValueError("PEQ configuration exceeds safe registry value size")
 
 
+@dataclass(frozen=True)
+class DSPProfile:
+    profile_key: str | None
+    bands: list[Band]
+    preamp_db: float
+    virtual_bass_enabled: bool | None
+    revision: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {**asdict(self), "bands": [band.to_dict() for band in self.bands]}
+
+
 class HXAudioController:
     def __init__(self, registry: Registry, backup_dir: Path | None = None,
                  read_only: bool = False):
         self.registry = registry
-        self.lock = threading.RLock()
+        self.lock = _DSP_WRITE_LOCK
         self.read_only = read_only
         if backup_dir is None:
             root = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
@@ -148,9 +163,19 @@ class HXAudioController:
                 "runtime_confirmation": self._runtime_confirmation(generation),
             }
 
-    def _runtime_confirmation(self, generation: int | None) -> dict[str, Any]:
+    def _runtime_confirmation(self, generation: int | None,
+                              profile_key: str | None = None) -> dict[str, Any]:
         if generation is None:
             return {"state": "generation_not_used"}
+        if profile_key is not None:
+            name = f"ApoSettingsGeneration_{device_suffix(profile_key)}"
+            value = self.registry.read("machine", RUNTIME_PATH, name)
+            actual = value.value if value and value.type == REG_DWORD else None
+            state = "not_observed" if actual is None else "pending"
+            if actual == generation:
+                state = "observed"
+            return {"state": state, "profile_key": profile_key,
+                    "expected_generation": generation, "actual_generation": actual}
         active = self.registry.values("machine", RUNTIME_PATH)
         observations = {key: value.value for key, value in active.items()
                         if key.startswith("ApoSettingsGeneration_") and value.type == REG_DWORD}
@@ -170,13 +195,18 @@ class HXAudioController:
                 "notified_generation": generation.value if generation else None,
                 "runtime": relevant}
 
-    def wait_for_generation(self, generation: int, timeout_seconds: float = 2.0) -> dict[str, Any]:
+    def wait_for_generation(self, generation: int, timeout_seconds: float = 2.0,
+                            profile_key: str | None = None) -> dict[str, Any]:
         if not 0 <= timeout_seconds <= 10:
             raise ValueError("timeout_seconds must be 0..10")
+        if profile_key is not None:
+            self._choose_profile(profile_key)
         deadline = time.monotonic() + timeout_seconds
         while True:
-            status = self._runtime_confirmation(generation)
+            status = self._runtime_confirmation(generation, profile_key)
             if status["state"] == "observed" or time.monotonic() >= deadline:
+                if profile_key is not None:
+                    status["timed_out"] = status["state"] != "observed"
                 return status
             time.sleep(0.05)
 
@@ -332,6 +362,70 @@ class HXAudioController:
             self._record_change(changes, name, RegValue(format(value, ".17g"), REG_SZ))
             return {"profile_key": profile, "preamp_db": value, "setting": name,
                     **self._transaction(changes)}
+
+    def get_dsp_profile(self, profile_key: str | None = None) -> DSPProfile:
+        with self.lock:
+            profile = self._choose_profile(profile_key)
+            bands_name, id_name = self._band_setting_names(profile)
+            names = {"DspPeqBands", "DspPreampDb", *self.get_virtual_bass()}
+            if id_name:
+                names.update((bands_name, id_name, f"DspPeqPreampDb_{device_suffix(profile)}"))
+            snapshot = {
+                hive: {name: asdict(value) if (value := self.registry.read(hive, KEY_PATH, name))
+                       else None for name in sorted(names)}
+                for hive in ("user", "machine")
+            }
+            encoded = json.dumps([profile, self.is_apo_mode(), snapshot], sort_keys=True)
+            bass = self._read("DspVirtualBassEnabled")
+            return DSPProfile(
+                profile, [Band.from_dict(band) for band in self.get_eq(profile)["bands"]],
+                self.get_preamp(profile)["preamp_db"],
+                bool(bass.value) if bass and bass.type == REG_DWORD else None,
+                hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
+            )
+
+    def apply_dsp_profile(self, bands: list[dict[str, Any]], preamp_db: float,
+                          expected_revision: str, profile_key: str | None = None,
+                          virtual_bass_enabled: bool | None = None,
+                          timeout_seconds: float = 2.0) -> dict[str, Any]:
+        if not isinstance(bands, list) or len(bands) > MAX_PEQ_BANDS:
+            raise ValueError(f"bands must be a list of at most {MAX_PEQ_BANDS} bands")
+        parsed = [Band.from_dict(band) for band in bands]
+        gain = validate_preamp(preamp_db)
+        if virtual_bass_enabled is not None and type(virtual_bass_enabled) is not bool:
+            raise ValueError("virtual_bass_enabled must be boolean")
+        if not 0 <= timeout_seconds <= 10:
+            raise ValueError("timeout_seconds must be 0..10")
+        with self.lock:
+            current = self.get_dsp_profile(profile_key)
+            profile = current.profile_key
+            if current.revision != expected_revision:
+                return {"state": "revision_conflict", "profile": current.to_dict()}
+            name, id_name = self._band_setting_names(profile)
+            changes: list[tuple[str, str, str, RegValue | None]] = []
+            if id_name:
+                self._record_change(changes, id_name, RegValue(profile, REG_SZ))
+            encoded_bands = [band.serialize() for band in parsed]
+            self._record_change(changes, name, RegValue(encoded_bands, REG_MULTI_SZ))
+            device_preamp = f"DspPeqPreampDb_{device_suffix(profile)}" if profile else None
+            preamp_name = "DspPreampDb"
+            if device_preamp and self._read(device_preamp):
+                preamp_name = device_preamp
+            self._record_change(changes, preamp_name, RegValue(format(gain, ".17g"), REG_SZ))
+            if virtual_bass_enabled is not None:
+                self._record_change(changes, "DspVirtualBassEnabled",
+                                    RegValue(int(virtual_bass_enabled), REG_DWORD))
+            report = self._transaction(changes)
+            generation = report["apo_generation"]
+            if generation is not None:
+                report["runtime_confirmation"] = self.wait_for_generation(
+                    generation, timeout_seconds, profile
+                )
+            consistent = all(self.registry.read(hive, key, name) == value
+                             for hive, key, name, value in changes)
+            return {"state": "written" if consistent else "readback_mismatch",
+                    "registry_consistent": consistent, "acoustic_confirmed": None,
+                    "profile": self.get_dsp_profile(profile).to_dict(), **report}
 
     def get_virtual_bass(self) -> dict[str, Any]:
         keys = ("DspVirtualBassEnabled", "DspVirtualBassAmount", "DspVirtualBassStrength",

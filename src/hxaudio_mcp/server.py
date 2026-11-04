@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from mcp.server import MCPServer
 
+from .calibration_tools import register
 from .core import HXAudioController
 from .registry import WindowsRegistry
 
@@ -133,9 +135,25 @@ def get_runtime_status() -> dict[str, Any]:
 
 
 @server.tool()
-def wait_for_apo_apply(generation: int, timeout_seconds: float = 2.0) -> dict[str, Any]:
+def wait_for_apo_apply(generation: int, timeout_seconds: float = 2.0,
+                       profile_key: str | None = None) -> dict[str, Any]:
     """Observe an APO runtime generation after a write; 'not_observed' means unavailable."""
-    return controller.wait_for_generation(generation, timeout_seconds)
+    return controller.wait_for_generation(generation, timeout_seconds, profile_key)
+
+
+@server.tool()
+def get_dsp_profile(profile_key: str | None = None) -> dict[str, Any]:
+    """Read the current DSP settings and revision for a subsequent guarded update."""
+    return controller.get_dsp_profile(profile_key).to_dict()
+
+
+@server.tool()
+def apply_dsp_profile(bands: list[dict[str, Any]], preamp_db: float, expected_revision: str,
+                      profile_key: str | None = None, virtual_bass_enabled: bool | None = None,
+                      timeout_seconds: float = 2.0) -> dict[str, Any]:
+    """Commit EQ and preamp together. Preamp and virtual bass can be global settings."""
+    return controller.apply_dsp_profile(bands, preamp_db, expected_revision, profile_key,
+                                        virtual_bass_enabled, timeout_seconds)
 
 
 @server.tool()
@@ -165,6 +183,10 @@ def import_eq_from_hxconfig(path: str, profile_key: str | None = None,
     Does not import opaque proprietary fields or its device-volume section.
     """
     return controller.import_export_eq(path, profile_key, source_profile_key)
+
+
+register(server, controller, Path(os.environ.get("LOCALAPPDATA", Path.home()))
+         / "HXAudioMCP" / "calibrations" / "sessions")
 
 
 def run() -> None:

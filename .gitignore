@@ -13,3 +13,4 @@ dist/
 *.json.bak
 .env
 .DS_Store
+docs/CODEX_DEVELOPMENT_PLAN.md

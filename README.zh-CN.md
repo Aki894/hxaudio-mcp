@@ -144,3 +144,14 @@ MCP 客户端会在本机启动服务进程。执行 APO 写入操作时，该�
 ## 开源协议
 
 [MIT](LICENSE)。本项目是独立开发的 HXAudio MCP 集成工具，与 HXAudio 开发者无隶属关系，仓库不包含 HXAudio 软件本体。
+
+## 声学校准
+
+安装可选依赖 `python -m pip install -e ".[calibration]"` 后重启 MCP 服务。
+先用 `calibration_check` 识别播放、采集和 HXAudio 配置，再用
+`calibration_measure` 采集。分别测量左右声道后，可将两个测量 ID
+交给 `calibration_optimize`，预览一套共享 EQ。需要逐频复测时，
+传入 `tones_hz`，并用 `calibration_compare_tones` 比较应用前后的结果。
+自动校准入口为 `calibration_run`，使用 `keep=false` 试跑时会恢复起始配置。
+
+路由设置、工具参数和对数扫频命令见 [声学校准指南](docs/CALIBRATION.md)。
