@@ -1,6 +1,6 @@
 ---
 name: hxaudio-eq
-summary: Read and adjust HXAudio APO EQ with the local HXAudio MCP server.
+description: Read and adjust HXAudio APO EQ with the local HXAudio MCP server.
 ---
 
 # HXAudio EQ

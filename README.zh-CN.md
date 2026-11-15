@@ -1,10 +1,22 @@
 # HXAudio MCP
 
+[![Includes Agent Skills](https://img.shields.io/badge/Includes-Agent%20Skills-6E56CF)](skills/)
+
 [English](README.md) · [技术架构](docs/ARCHITECTURE.md) · [开源协议](LICENSE)
 
 **让 AI Agent 直接控制 HXAudio APO。** HXAudio MCP 是一个运行在 Windows 本机的 [Model Context Protocol（MCP）](https://modelcontextprotocol.io/) 服务，可通过标准工具接口读取和修改 HXAudio 参数均衡器（PEQ）、前级增益及虚拟低音，无需模拟鼠标操作。
 
 服务采用 **stdio** 通信，通过 Windows 注册表与 HXAudio 的配置刷新机制应用参数。
+
+## 看看它能做什么
+
+> “把 3.7 kHz 频段调到 0 dB，其他设置保持不变。”
+
+![Agent 通过 MCP 调节 HXAudio 的单个 EQ 频段](docs/assets/agent-eq-demo.gif)
+
+演示由真实 MCP 调用与 HXAudio 画面剪辑而成：读取 EQ、保存备份、调整一个频段、读回确认。采集结束后已恢复原 EQ。
+
+**Includes Agent Skills** — 打开 [`skills/`](skills/) 查看随仓库提供的技能，或直接使用 [HXAudio EQ Skill](skills/hxaudio-eq/SKILL.md)。按下方步骤配置 MCP 服务后，将技能提供给 Agent 客户端，即可按现成流程调节 EQ。
 
 ## 功能特性
 

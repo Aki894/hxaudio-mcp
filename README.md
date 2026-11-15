@@ -1,10 +1,22 @@
 # HXAudio MCP
 
+[![Includes Agent Skills](https://img.shields.io/badge/Includes-Agent%20Skills-6E56CF)](skills/)
+
 [简体中文](README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [License](LICENSE)
 
 **Control HXAudio APO directly from an AI agent.** HXAudio MCP is a local [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for reading and adjusting Windows HXAudio parametric EQ, preamp, and virtual bass settings—without automating the graphical interface.
 
 The server communicates over **stdio** and applies supported changes through the Windows registry with HXAudio's live-reload notification mechanism.
+
+## See it in action
+
+> “Set the 3.7 kHz band to 0 dB. Keep everything else.”
+
+![Agent adjusts one HXAudio EQ band through MCP](docs/assets/agent-eq-demo.gif)
+
+An edited replay of actual MCP calls and HXAudio captures: read the EQ, save a backup, change one band, and verify the result. The original EQ was restored after capture.
+
+**Includes Agent Skills** — browse [`skills/`](skills/) or open the [HXAudio EQ skill](skills/hxaudio-eq/SKILL.md) for the ready-to-use adjustment workflow. Configure the MCP server below, then make the skill available to your Agent client.
 
 ## Features
 
